@@ -1,0 +1,24 @@
+[
+  {
+    "id": "track_001",
+    "title": "Bohemian Rhapsody",
+    "artist": "Queen",
+    "album": "A Night at the Opera",
+    "duration": "355",
+    "url": "http://localhost:3000/music/queen/bohemian_rhapsody.mp3",
+    "file_path": "/music/queen/bohemian_rhapsody.mp3",
+    "genre": "Rock",
+    "year": "1975"
+  },
+  {
+    "id": "track_002",
+    "title": "Stairway to Heaven",
+    "artist": "Led Zeppelin",
+    "album": "Led Zeppelin IV",
+    "duration": "482",
+    "url": "http://localhost:3000/music/led_zeppelin/stairway_to_heaven.mp3",
+    "file_path": "/music/led_zeppelin/stairway_to_heaven.mp3",
+    "genre": "Rock",
+    "year": "1971"
+  }
+]

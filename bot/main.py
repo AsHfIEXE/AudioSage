@@ -57,26 +57,55 @@ async def on_ready():
         print(f"Failed to sync commands: {e}")
 
 # Voice commands
+# Replace your existing /join command with this version:
+
 @bot.tree.command(name="join", description="Join your voice channel")
 async def join(interaction: discord.Interaction):
-    # More robust voice state checking
-    if not interaction.user.voice:
-        await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
+    # Detailed debugging
+    print(f"[DEBUG] User: {interaction.user}")
+    print(f"[DEBUG] User Voice State: {getattr(interaction.user, 'voice', 'No voice state')}")
+    
+    # Check if user has a voice state at all
+    if not hasattr(interaction.user, 'voice') or interaction.user.voice is None:
+        await interaction.response.send_message(
+            "❌ You don't appear to have a voice state. Please make sure you're in a voice channel and try again.",
+            ephemeral=True
+        )
+        return
+    
+    # Check if user is in a voice channel
+    if interaction.user.voice.channel is None:
+        await interaction.response.send_message(
+            "❌ You need to be in a voice channel to use this command!",
+            ephemeral=True
+        )
         return
     
     channel = interaction.user.voice.channel
+    print(f"[DEBUG] Target Channel: {channel.name} (ID: {channel.id})")
     
-    # Check if bot is already in a voice channel
-    if interaction.guild.voice_client:
+    # Check if bot is already in the same voice channel
+    if interaction.guild.voice_client is not None:
         if interaction.guild.voice_client.channel == channel:
-            await interaction.response.send_message("Already in your voice channel!")
+            await interaction.response.send_message("✅ Already in your voice channel!", ephemeral=True)
             return
         else:
+            # Move to the new channel
+            await interaction.response.send_message(f"🔄 Moving to {channel.name}...", ephemeral=True)
             await interaction.guild.voice_client.move_to(channel)
-            await interaction.response.send_message(f"Moved to {channel.name}")
-    else:
+            await interaction.edit_original_response(content=f"✅ Moved to {channel.name}")
+            return
+    
+    # Attempt to connect
+    try:
+        await interaction.response.send_message(f"🔌 Connecting to {channel.name}...", ephemeral=True)
         await channel.connect()
-        await interaction.response.send_message(f"Joined {channel.name}")
+        await interaction.edit_original_response(content=f"✅ Successfully joined {channel.name}")
+        print(f"[INFO] Successfully joined {channel.name}")
+    except Exception as e:
+        error_msg = f"❌ Failed to join {channel.name}: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        await interaction.edit_original_response(content=error_msg)
 
 @bot.tree.command(name="leave", description="Leave voice channel")
 async def leave(interaction: discord.Interaction):
@@ -87,7 +116,31 @@ async def leave(interaction: discord.Interaction):
         await interaction.response.send_message("Left voice channel")
     else:
         await interaction.response.send_message("Not in a voice channel", ephemeral=True)
+# Add this to your bot commands in main.py
 
+@bot.tree.command(name="debug_info", description="Show debug information")
+async def debug_info(interaction: discord.Interaction):
+    # Check if user is in voice channel
+    in_vc = "Yes" if interaction.user.voice and interaction.user.voice.channel else "No"
+    
+    # Check bot's voice state
+    bot_vc = "Not in VC"
+    if interaction.guild.voice_client:
+        bot_vc = f"In {interaction.guild.voice_client.channel.name}"
+    
+    # List registered commands
+    commands = [cmd.name for cmd in bot.tree.get_commands()]
+    
+    info = f"""
+**Debug Information:**
+- You in VC: {in_vc}
+- Bot Status: {bot_vc}
+- Registered Commands: {', '.join(commands)}
+- Guild ID: {interaction.guild.id}
+- Your ID: {interaction.user.id}
+    """
+    
+    await interaction.response.send_message(info, ephemeral=True)
 # Playback commands
 @bot.tree.command(name="play", description="Play a track by name")
 async def play(interaction: discord.Interaction, query: str):

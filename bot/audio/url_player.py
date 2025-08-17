@@ -2,6 +2,7 @@ import discord
 import asyncio
 from collections import deque
 import random
+import yt_dlp
 
 class URLMusicPlayer:
     def __init__(self, server_url):
@@ -28,6 +29,50 @@ class URLMusicPlayer:
         if not self.is_playing:
             await self.play_next(interaction)
     
+    def _is_youtube_url(self, url):
+        """Check if the URL is a YouTube link"""
+        return 'youtube.com' in url or 'youtu.be' in url
+    
+    def _extract_youtube_info(self, url):
+        """Extract audio URL and metadata from YouTube link"""
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'restrictfilenames': True,
+            'noplaylist': True,
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'quiet': True,
+            'no_warnings': True,
+            'default_search': 'error',
+            'source_address': '0.0.0.0',
+            'prefer_ffmpeg': True,
+        }
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                
+                # Get the best audio format URL
+                audio_url = None
+                if 'url' in info:
+                    audio_url = info['url']
+                elif 'entries' in info and info['entries']:
+                    audio_url = info['entries'][0]['url']
+                
+                return {
+                    'id': info.get('id', 'unknown'),
+                    'title': info.get('title', 'Unknown YouTube Track'),
+                    'artist': info.get('uploader', 'Unknown Uploader'),
+                    'album': 'YouTube',
+                    'url': audio_url,
+                    'duration': str(info.get('duration', 0)),
+                    'thumbnail': info.get('thumbnail', '')
+                }
+        except Exception as e:
+            print(f"Error extracting YouTube info: {e}")
+            return None
+    
     async def play_next(self, interaction):
         # Handle loop modes
         if self.loop_mode == 1 and self.current_track and not len(self.queue):
@@ -51,13 +96,27 @@ class URLMusicPlayer:
             return
         
         try:
-            # Get the audio URL (now could be any URL)
+            # Handle YouTube URLs
             audio_url = self.current_track.get('url')
             if not audio_url:
                 await interaction.followup.send("❌ Invalid audio URL")
                 return
             
-            # Play the audio file directly from URL with volume
+            # If it's a YouTube URL, extract the direct audio URL
+            if self._is_youtube_url(audio_url):
+                await interaction.followup.send(f"🔍 Processing YouTube link: {self.current_track.get('title', 'Unknown')}")
+                yt_info = self._extract_youtube_info(audio_url)
+                if yt_info and yt_info['url']:
+                    audio_url = yt_info['url']
+                    # Update current track with YouTube metadata
+                    self.current_track.update(yt_info)
+                else:
+                    await interaction.followup.send("❌ Failed to extract audio from YouTube link")
+                    # Continue to next track
+                    await self.play_next(interaction)
+                    return
+            
+            # Play the audio
             def after_playing(error):
                 if error:
                     print(f"Error playing track: {error}")

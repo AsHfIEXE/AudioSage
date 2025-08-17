@@ -3,6 +3,11 @@ import asyncio
 from collections import deque
 import random
 import yt_dlp
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class URLMusicPlayer:
     def __init__(self, server_url):
@@ -47,6 +52,9 @@ class URLMusicPlayer:
             'default_search': 'error',
             'source_address': '0.0.0.0',
             'prefer_ffmpeg': True,
+            'keepvideo': False,
+            'audioquality': '0',  # Best quality
+            'audioformat': 'mp3',
         }
         
         try:
@@ -70,7 +78,7 @@ class URLMusicPlayer:
                     'thumbnail': info.get('thumbnail', '')
                 }
         except Exception as e:
-            print(f"Error extracting YouTube info: {e}")
+            logger.error(f"Error extracting YouTube info: {e}")
             return None
     
     async def play_next(self, interaction):
@@ -116,21 +124,28 @@ class URLMusicPlayer:
                     await self.play_next(interaction)
                     return
             
-            # Play the audio
+            # Play the audio with better quality settings
             def after_playing(error):
                 if error:
-                    print(f"Error playing track: {error}")
+                    logger.error(f"Error playing track: {error}")
                 # Schedule next track
-                asyncio.run_coroutine_threadsafe(
-                    self.play_next(interaction), 
-                    interaction.client.loop
-                )
+                coro = self.play_next(interaction)
+                fut = asyncio.run_coroutine_threadsafe(coro, interaction.client.loop)
+                try:
+                    fut.result()
+                except Exception as e:
+                    logger.error(f"Error in after_playing: {e}")
             
-            # Play with volume control
-            source = discord.FFmpegPCMAudio(
-                audio_url,
-                options=f'-af "volume={self.volume}"'
-            )
+            # Better FFmpeg options for audio quality
+            ffmpeg_options = {
+                'options': f'-vn -af "volume={self.volume}" -ar 48000 -ac 2 -b:a 192k'
+            }
+            
+            source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
+            
+            # Stop any currently playing audio
+            if voice_client.is_playing():
+                voice_client.stop()
             
             voice_client.play(source, after=after_playing)
             
@@ -138,6 +153,7 @@ class URLMusicPlayer:
             await interaction.followup.send(f"🎵 Now playing: {self.current_track.get('title', 'Unknown')}")
             
         except Exception as e:
+            logger.error(f"Error playing track: {e}")
             await interaction.followup.send(f"❌ Error playing track: {str(e)}")
             # Continue to next track
             await self.play_next(interaction)

@@ -12,17 +12,24 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from bot.audio.url_player import URLMusicPlayer
-from bot.audio.library import MusicLibrary
-from bot.audio.playlist_manager import PlaylistManager
+import requests
+import json
 from flask import Flask, jsonify, request
 from threading import Thread
 
+# Import our modules
+from bot.audio.url_player import URLMusicPlayer
+from bot.audio.library import MusicLibrary
+from bot.audio.playlist_manager import PlaylistManager
+
 load_dotenv()
 
-intents = discord.Intents.default()
-intents.message_content = True
+# Explicitly define the intents we need
+intents = discord.Intents.none()
+intents.guilds = True
 intents.voice_states = True
+intents.messages = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -40,18 +47,36 @@ def get_player(guild_id):
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
-    await bot.tree.sync()
+    print(f"Bot is in {len(bot.guilds)} guilds")
+    
+    # Force sync commands when bot starts
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
 # Voice commands
 @bot.tree.command(name="join", description="Join your voice channel")
 async def join(interaction: discord.Interaction):
+    # More robust voice state checking
     if not interaction.user.voice:
         await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
     channel = interaction.user.voice.channel
-    await channel.connect()
-    await interaction.response.send_message(f"Joined {channel.name}")
+    
+    # Check if bot is already in a voice channel
+    if interaction.guild.voice_client:
+        if interaction.guild.voice_client.channel == channel:
+            await interaction.response.send_message("Already in your voice channel!")
+            return
+        else:
+            await interaction.guild.voice_client.move_to(channel)
+            await interaction.response.send_message(f"Moved to {channel.name}")
+    else:
+        await channel.connect()
+        await interaction.response.send_message(f"Joined {channel.name}")
 
 @bot.tree.command(name="leave", description="Leave voice channel")
 async def leave(interaction: discord.Interaction):
@@ -70,6 +95,7 @@ async def play(interaction: discord.Interaction, query: str):
         await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
+    # Join voice channel if not already connected
     if not interaction.guild.voice_client:
         await interaction.user.voice.channel.connect()
     
@@ -88,6 +114,7 @@ async def playnext(interaction: discord.Interaction, query: str):
         await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
+    # Join voice channel if not already connected
     if not interaction.guild.voice_client:
         await interaction.user.voice.channel.connect()
     
@@ -112,6 +139,7 @@ async def playurl(interaction: discord.Interaction, url: str):
         await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
+    # Join voice channel if not already connected
     if not interaction.guild.voice_client:
         await interaction.user.voice.channel.connect()
     
@@ -296,6 +324,7 @@ async def playlist_play(interaction: discord.Interaction, playlist_name: str):
         await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
+    # Join voice channel if not already connected
     if not interaction.guild.voice_client:
         await interaction.user.voice.channel.connect()
     
@@ -331,6 +360,20 @@ async def playlist_list(interaction: discord.Interaction):
     
     embed.description = description
     await interaction.response.send_message(embed=embed)
+
+# Debug/Utility commands
+@bot.tree.command(name="ping", description="Test if the bot is responding")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message("Pong! Bot is working.")
+
+@bot.tree.command(name="syncnow", description="Force sync all commands")
+async def syncnow(interaction: discord.Interaction):
+    await interaction.response.send_message("Syncing commands...", ephemeral=True)
+    try:
+        synced = await bot.tree.sync()
+        await interaction.edit_original_response(content=f"✅ Commands synced! Registered {len(synced)} commands.")
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Failed to sync commands: {e}")
 
 # Web API endpoints
 def run_web_api():
@@ -447,4 +490,5 @@ def run_web_api():
 web_api_thread = Thread(target=run_web_api)
 web_api_thread.start()
 
+# Run the bot
 bot.run(os.getenv('DISCORD_TOKEN'))

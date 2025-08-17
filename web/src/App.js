@@ -27,9 +27,9 @@ function App() {
       .catch(err => console.error('Library load error:', err));
     
     // Load server URL
-    fetch('http://localhost:3000/api/config')
+    fetch('http://localhost:5000/api/server')
       .then(res => res.json())
-      .then(data => setServerUrl(data.baseUrl))
+      .then(data => setServerUrl(data.server_url))
       .catch(err => console.error('Server config load error:', err));
     
     // Poll for player state
@@ -76,6 +76,7 @@ function App() {
     if (!directUrl) return;
     
     try {
+      // First, send request to backend to play URL
       const response = await fetch(`http://localhost:5000/api/playurl/${guildId}`, {
         method: 'POST',
         headers: {
@@ -86,30 +87,30 @@ function App() {
       
       const data = await response.json();
       if (data.status === 'ok') {
-        alert(`Playing: ${directUrl}`);
+        alert(`Sent URL to bot: ${directUrl}`);
         setDirectUrl('');
       } else {
-        alert('Error playing URL');
+        alert(`Error: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error playing URL:', error);
-      alert('Error playing URL');
+      alert('Error sending URL to bot');
     }
   };
 
   const handleSetServerUrl = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/config', {
+      const response = await fetch('http://localhost:5000/api/server', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ baseUrl: serverUrl }),
+        body: JSON.stringify({ url: serverUrl }),
       });
       
       const data = await response.json();
-      if (data.config) {
-        alert(`Server URL updated to: ${data.config.baseUrl}`);
+      if (data.server_url) {
+        alert(`Server URL updated to: ${data.server_url}`);
       } else {
         alert('Error updating server URL');
       }
@@ -204,6 +205,15 @@ function App() {
                 >
                   ▶️ Play URL
                 </button>
+              </div>
+              
+              <div className="url-examples">
+                <h3>Examples:</h3>
+                <ul>
+                  <li>Direct MP3: https://example.com/song.mp3</li>
+                  <li>YouTube: https://www.youtube.com/watch?v=...</li>
+                  <li>YouTube Short: https://youtu.be/...</li>
+                </ul>
               </div>
               
               <h3>Server Configuration</h3>

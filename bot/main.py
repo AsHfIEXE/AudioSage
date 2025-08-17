@@ -1,6 +1,11 @@
 import sys
 import os
 import asyncio
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Fix for Windows async DNS resolution issue
 if sys.platform == 'win32':
@@ -57,55 +62,26 @@ async def on_ready():
         print(f"Failed to sync commands: {e}")
 
 # Voice commands
-# Replace your existing /join command with this version:
-
 @bot.tree.command(name="join", description="Join your voice channel")
 async def join(interaction: discord.Interaction):
-    # Detailed debugging
-    print(f"[DEBUG] User: {interaction.user}")
-    print(f"[DEBUG] User Voice State: {getattr(interaction.user, 'voice', 'No voice state')}")
-    
-    # Check if user has a voice state at all
-    if not hasattr(interaction.user, 'voice') or interaction.user.voice is None:
-        await interaction.response.send_message(
-            "❌ You don't appear to have a voice state. Please make sure you're in a voice channel and try again.",
-            ephemeral=True
-        )
-        return
-    
-    # Check if user is in a voice channel
-    if interaction.user.voice.channel is None:
-        await interaction.response.send_message(
-            "❌ You need to be in a voice channel to use this command!",
-            ephemeral=True
-        )
+    # More robust voice state checking
+    if not interaction.user.voice:
+        await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
         return
     
     channel = interaction.user.voice.channel
-    print(f"[DEBUG] Target Channel: {channel.name} (ID: {channel.id})")
     
-    # Check if bot is already in the same voice channel
-    if interaction.guild.voice_client is not None:
+    # Check if bot is already in a voice channel
+    if interaction.guild.voice_client:
         if interaction.guild.voice_client.channel == channel:
-            await interaction.response.send_message("✅ Already in your voice channel!", ephemeral=True)
+            await interaction.response.send_message("Already in your voice channel!")
             return
         else:
-            # Move to the new channel
-            await interaction.response.send_message(f"🔄 Moving to {channel.name}...", ephemeral=True)
             await interaction.guild.voice_client.move_to(channel)
-            await interaction.edit_original_response(content=f"✅ Moved to {channel.name}")
-            return
-    
-    # Attempt to connect
-    try:
-        await interaction.response.send_message(f"🔌 Connecting to {channel.name}...", ephemeral=True)
+            await interaction.response.send_message(f"Moved to {channel.name}")
+    else:
         await channel.connect()
-        await interaction.edit_original_response(content=f"✅ Successfully joined {channel.name}")
-        print(f"[INFO] Successfully joined {channel.name}")
-    except Exception as e:
-        error_msg = f"❌ Failed to join {channel.name}: {str(e)}"
-        print(f"[ERROR] {error_msg}")
-        await interaction.edit_original_response(content=error_msg)
+        await interaction.response.send_message(f"Joined {channel.name}")
 
 @bot.tree.command(name="leave", description="Leave voice channel")
 async def leave(interaction: discord.Interaction):
@@ -116,31 +92,7 @@ async def leave(interaction: discord.Interaction):
         await interaction.response.send_message("Left voice channel")
     else:
         await interaction.response.send_message("Not in a voice channel", ephemeral=True)
-# Add this to your bot commands in main.py
 
-@bot.tree.command(name="debug_info", description="Show debug information")
-async def debug_info(interaction: discord.Interaction):
-    # Check if user is in voice channel
-    in_vc = "Yes" if interaction.user.voice and interaction.user.voice.channel else "No"
-    
-    # Check bot's voice state
-    bot_vc = "Not in VC"
-    if interaction.guild.voice_client:
-        bot_vc = f"In {interaction.guild.voice_client.channel.name}"
-    
-    # List registered commands
-    commands = [cmd.name for cmd in bot.tree.get_commands()]
-    
-    info = f"""
-**Debug Information:**
-- You in VC: {in_vc}
-- Bot Status: {bot_vc}
-- Registered Commands: {', '.join(commands)}
-- Guild ID: {interaction.guild.id}
-- Your ID: {interaction.user.id}
-    """
-    
-    await interaction.response.send_message(info, ephemeral=True)
 # Playback commands
 @bot.tree.command(name="play", description="Play a track by name")
 async def play(interaction: discord.Interaction, query: str):
@@ -451,28 +403,27 @@ def run_web_api():
     @app.route('/api/playurl/<int:guild_id>', methods=['POST'])
     def play_url(guild_id):
         """Play audio directly from a URL"""
-        data = request.json
-        url = data.get('url')
-        
-        if not url or not url.startswith(('http://', 'https://')):
-            return jsonify({'error': 'Invalid URL'}), 400
-        
-        # Create temporary track
-        track = {
-            'id': f"url_{hash(url) % 1000000}",
-            'title': url.split('/')[-1] or "Unknown URL Track",
-            'artist': "URL Source",
-            'album': "Direct URL",
-            'url': url,
-            'duration': "Unknown"
-        }
-        
-        # Get player and add to queue
-        player = get_player(guild_id)
-        # In a real implementation, you'd trigger playback here
-        # This is a simplified version
-        
-        return jsonify({'status': 'ok', 'track': track})
+        try:
+            data = request.json
+            url = data.get('url')
+            
+            if not url or not url.startswith(('http://', 'https://')):
+                return jsonify({'error': 'Invalid URL'}), 400
+            
+            # Create temporary track
+            track = {
+                'id': f"url_{hash(url) % 1000000}",
+                'title': url.split('/')[-1] or "Unknown URL Track",
+                'artist': "URL Source",
+                'album': "Direct URL",
+                'url': url,
+                'duration': "Unknown"
+            }
+            
+            return jsonify({'status': 'ok', 'track': track})
+        except Exception as e:
+            logger.error(f"Error in play_url API: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
     
     @app.route('/api/server', methods=['GET'])
     def get_server_url():
@@ -482,60 +433,70 @@ def run_web_api():
     @app.route('/api/server', methods=['POST'])
     def set_server_url():
         """Set server URL"""
-        global MUSIC_SERVER_URL
-        data = request.json
-        url = data.get('url', '').rstrip('/')
-        
-        if not url.startswith(('http://', 'https://')):
-            return jsonify({'error': 'Invalid URL'}), 400
-        
-        MUSIC_SERVER_URL = url
-        
-        # Update all players
-        for player in music_players.values():
-            player.server_url = url
-        
-        return jsonify({'server_url': MUSIC_SERVER_URL})
+        try:
+            global MUSIC_SERVER_URL
+            data = request.json
+            url = data.get('url', '').rstrip('/')
+            
+            if not url.startswith(('http://', 'https://')):
+                return jsonify({'error': 'Invalid URL'}), 400
+            
+            MUSIC_SERVER_URL = url
+            
+            # Update all players
+            for player in music_players.values():
+                player.server_url = url
+            
+            return jsonify({'server_url': MUSIC_SERVER_URL})
+        except Exception as e:
+            logger.error(f"Error in set_server_url API: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
     
     @app.route('/api/play/<int:guild_id>', methods=['POST'])
     def play_track(guild_id):
-        data = request.json
-        track_id = data.get('track_id')
-        
-        track = music_library.get_track_by_id(track_id)
-        if not track:
-            return jsonify({'error': 'Track not found'}), 404
-        
-        player = get_player(guild_id)
-        # In a real implementation, you'd trigger playback through Discord
-        return jsonify({'status': 'ok'})
+        try:
+            data = request.json
+            track_id = data.get('track_id')
+            
+            track = music_library.get_track_by_id(track_id)
+            if not track:
+                return jsonify({'error': 'Track not found'}), 404
+            
+            return jsonify({'status': 'ok'})
+        except Exception as e:
+            logger.error(f"Error in play_track API: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
     
     @app.route('/api/control/<int:guild_id>/<action>', methods=['POST'])
     def control_player(guild_id, action):
-        player = get_player(guild_id)
-        if not player:
-            return jsonify({'error': 'Player not found'}), 404
-        
-        if action == 'play':
-            # Implementation would trigger play
-            pass
-        elif action == 'pause':
-            # Implementation would trigger pause
-            pass
-        elif action == 'skip':
-            # Implementation would trigger skip
-            pass
-        elif action == 'stop':
-            # Implementation would trigger stop
-            pass
-        elif action == 'volume':
-            volume = request.json.get('volume', 100)
-            player.volume = volume / 100.0
-        elif action == 'loop':
-            mode = request.json.get('mode', 0)
-            player.loop_mode = mode
-        
-        return jsonify(player.get_player_state())
+        try:
+            player = get_player(guild_id)
+            if not player:
+                return jsonify({'error': 'Player not found'}), 404
+            
+            if action == 'play':
+                # Implementation would trigger play
+                pass
+            elif action == 'pause':
+                # Implementation would trigger pause
+                pass
+            elif action == 'skip':
+                # Implementation would trigger skip
+                pass
+            elif action == 'stop':
+                # Implementation would trigger stop
+                pass
+            elif action == 'volume':
+                volume = request.json.get('volume', 100)
+                player.volume = volume / 100.0
+            elif action == 'loop':
+                mode = request.json.get('mode', 0)
+                player.loop_mode = mode
+            
+            return jsonify(player.get_player_state())
+        except Exception as e:
+            logger.error(f"Error in control_player API: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
     
     app.run(host='0.0.0.0', port=5000)
 

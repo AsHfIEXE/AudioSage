@@ -1,8 +1,12 @@
 import sys
 import os
 import asyncio
+
+# Fix for Windows async DNS resolution issue
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Add the project root directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import discord

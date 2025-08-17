@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
+app.use(express.json());
+
 const PORT = 3000;
 
 // Serve static files from the 'music' directory if it exists
@@ -45,7 +47,27 @@ app.get('/api/music', (req, res) => {
     res.json(mockLibrary);
 });
 
+// Endpoint to set/get server configuration
+let serverConfig = {
+    baseUrl: 'http://localhost:3000'
+};
+
+app.get('/api/config', (req, res) => {
+    res.json(serverConfig);
+});
+
+app.post('/api/config', (req, res) => {
+    const { baseUrl } = req.body;
+    if (baseUrl) {
+        serverConfig.baseUrl = baseUrl;
+        res.json({ message: 'Configuration updated', config: serverConfig });
+    } else {
+        res.status(400).json({ error: 'baseUrl is required' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🎵 Music server running at http://localhost:${PORT}`);
     console.log(`📚 API endpoint: http://localhost:${PORT}/api/music`);
+    console.log(`⚙️  Config endpoint: http://localhost:${PORT}/api/config`);
 });

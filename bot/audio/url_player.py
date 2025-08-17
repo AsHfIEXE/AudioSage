@@ -51,12 +51,11 @@ class URLMusicPlayer:
             return
         
         try:
-            # Get the audio URL
+            # Get the audio URL (now could be any URL)
             audio_url = self.current_track.get('url')
             if not audio_url:
-                # Construct URL from server base if needed
-                file_path = self.current_track.get('file_path', '')
-                audio_url = f"{self.server_url}/{file_path.lstrip('/')}"
+                await interaction.followup.send("❌ Invalid audio URL")
+                return
             
             # Play the audio file directly from URL with volume
             def after_playing(error):
@@ -76,8 +75,11 @@ class URLMusicPlayer:
             
             voice_client.play(source, after=after_playing)
             
+            # Send now playing message
+            await interaction.followup.send(f"🎵 Now playing: {self.current_track.get('title', 'Unknown')}")
+            
         except Exception as e:
-            print(f"Error playing track: {e}")
+            await interaction.followup.send(f"❌ Error playing track: {str(e)}")
             # Continue to next track
             await self.play_next(interaction)
     

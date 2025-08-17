@@ -1,20 +1,18 @@
 import sys
-import asyncio
-
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-import asyncio
 from bot.audio.url_player import URLMusicPlayer
 from bot.audio.library import MusicLibrary
 from bot.audio.playlist_manager import PlaylistManager
 from flask import Flask, jsonify, request
 from threading import Thread
-import json
 
 load_dotenv()
 
@@ -97,6 +95,34 @@ async def playnext(interaction: discord.Interaction, query: str):
     player = get_player(interaction.guild.id)
     track = results[0]
     await player.add_to_queue(interaction, track, play_next=True)
+
+@bot.tree.command(name="playurl", description="Play audio directly from a URL")
+async def playurl(interaction: discord.Interaction, url: str):
+    """Play audio directly from a URL"""
+    # Validate URL format (basic check)
+    if not url.startswith(('http://', 'https://')):
+        await interaction.response.send_message("Please provide a valid HTTP/HTTPS URL", ephemeral=True)
+        return
+    
+    if not interaction.user.voice:
+        await interaction.response.send_message("You need to be in a voice channel!", ephemeral=True)
+        return
+    
+    if not interaction.guild.voice_client:
+        await interaction.user.voice.channel.connect()
+    
+    # Create a temporary track object
+    track = {
+        'id': f"url_{hash(url) % 1000000}",
+        'title': url.split('/')[-1] or "Unknown URL Track",
+        'artist': "URL Source",
+        'album': "Direct URL",
+        'url': url,
+        'duration': "Unknown"
+    }
+    
+    player = get_player(interaction.guild.id)
+    await player.add_to_queue(interaction, track)
 
 @bot.tree.command(name="skip", description="Skip current track")
 async def skip(interaction: discord.Interaction):
@@ -213,6 +239,32 @@ async def refresh(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("❌ Failed to refresh library", ephemeral=True)
 
+# Server configuration commands
+@bot.tree.command(name="setserver", description="Set the default music server URL")
+async def setserver(interaction: discord.Interaction, url: str):
+    """Set the default music server URL"""
+    if not url.startswith(('http://', 'https://')):
+        await interaction.response.send_message("Please provide a valid HTTP/HTTPS URL", ephemeral=True)
+        return
+    
+    # Remove trailing slash
+    url = url.rstrip('/')
+    
+    # Update the global music server URL
+    global MUSIC_SERVER_URL
+    MUSIC_SERVER_URL = url
+    
+    # Update all existing players
+    for player in music_players.values():
+        player.server_url = url
+    
+    await interaction.response.send_message(f"🎵 Music server URL updated to: {url}")
+
+@bot.tree.command(name="serverinfo", description="Show current music server URL")
+async def serverinfo(interaction: discord.Interaction):
+    """Show current music server URL"""
+    await interaction.response.send_message(f"🎵 Current music server: {MUSIC_SERVER_URL}")
+
 # Playlist commands
 @bot.tree.command(name="playlist_create", description="Create a new playlist")
 async def playlist_create(interaction: discord.Interaction, name: str):
@@ -295,6 +347,55 @@ def run_web_api():
         query = request.args.get('q', '')
         results = music_library.search(query)
         return jsonify(results)
+    
+    @app.route('/api/playurl/<int:guild_id>', methods=['POST'])
+    def play_url(guild_id):
+        """Play audio directly from a URL"""
+        data = request.json
+        url = data.get('url')
+        
+        if not url or not url.startswith(('http://', 'https://')):
+            return jsonify({'error': 'Invalid URL'}), 400
+        
+        # Create temporary track
+        track = {
+            'id': f"url_{hash(url) % 1000000}",
+            'title': url.split('/')[-1] or "Unknown URL Track",
+            'artist': "URL Source",
+            'album': "Direct URL",
+            'url': url,
+            'duration': "Unknown"
+        }
+        
+        # Get player and add to queue
+        player = get_player(guild_id)
+        # In a real implementation, you'd trigger playback here
+        # This is a simplified version
+        
+        return jsonify({'status': 'ok', 'track': track})
+    
+    @app.route('/api/server', methods=['GET'])
+    def get_server_url():
+        """Get current server URL"""
+        return jsonify({'server_url': MUSIC_SERVER_URL})
+    
+    @app.route('/api/server', methods=['POST'])
+    def set_server_url():
+        """Set server URL"""
+        global MUSIC_SERVER_URL
+        data = request.json
+        url = data.get('url', '').rstrip('/')
+        
+        if not url.startswith(('http://', 'https://')):
+            return jsonify({'error': 'Invalid URL'}), 400
+        
+        MUSIC_SERVER_URL = url
+        
+        # Update all players
+        for player in music_players.values():
+            player.server_url = url
+        
+        return jsonify({'server_url': MUSIC_SERVER_URL})
     
     @app.route('/api/play/<int:guild_id>', methods=['POST'])
     def play_track(guild_id):
